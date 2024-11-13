@@ -4,11 +4,11 @@ orbs:
   node: circleci/node@5.1.0
 
 aliases:
-  image: &image
-    docker:
-      - image: cimg/node:18.20
-  context: &context
-    context: Libmanuels
+  - image: &image
+      docker:
+        - image: cimg/node:18.20
+  - context: &context
+      context: Libmanuels
 
 commands:
   setup:
