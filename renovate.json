@@ -1,7 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
-  ],
-  "prHourlyLimit": 0
+  "extends": ["config:recommended"],
+  "prHourlyLimit": 0,
+  "circleci": {
+    "enabled": true
+  }
 }
