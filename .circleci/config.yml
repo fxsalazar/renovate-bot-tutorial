@@ -1,632 +1,74 @@
 version: 2.1
-aliases:
-  workspace_root: &workspace_root ~/project
-  win_node_cache_key: &win_node_cache_key node-deps-{{ arch }}-v5-{{ checksum "package-lock.json" }}
-  attach_workspace: &attach_workspace
-    attach_workspace:
-      at: *workspace_root
-  macos_env_default: &macos_env_default
-    working_directory: *workspace_root
-    macos:
-      xcode: 16.1.0
-    resource_class: macos.m1.medium.gen1
-  default_node_docker_image:
-    docker: &default_node_docker_image
-      - image: cimg/node:22.11
-  workflow_job_defaults:
-    context: &workflow_job_default_context
-      - org-global
-      - Libmanuels
-  electron_working_directory: &electron_working_directory
-    working_directory: ~/project/apps/libmanuels/electron
-  libmanuels_filter: &libmanuels_filter
-    branches:
-      only:
-        - /libmanuels\/.*/
-        - libmanuels/master
-        - develop
-        - /libmanuels\/preview\/.*/
-        - sdk/master
-        - /global\/.*/
-        - /dependabot\/.*/
-  libmanuels_publish_filter: &libmanuels_publish_filter
-    branches:
-      only:
-        - libmanuels/master
-        - /libmanuels\/rc\/.*/
-        - develop
-        - /libmanuels\/preview\/.*/
-        - /dependabot\/.*/
-  android_env_default: &android_env_default
-    working_directory: ~/project/apps/libmanuels/android
-    docker:
-      - image: cimg/android:2023.10-node
-    resource_class: medium+
-workflows:
-  libmanuels:
-    jobs:
-      - libmanuels-orb/lint-code:
-          name: libmanuels:lint-code
-          context: *workflow_job_default_context
-          filters: *libmanuels_filter
-      - libmanuels-orb/unit-test:
-          name: libmanuels:unit-test
-          context: *workflow_job_default_context
-          filters: *libmanuels_filter
-      - libmanuels-orb/build-for-browser:
-          name: libmanuels:build-for-browser
-          context: *workflow_job_default_context
-          filters: *libmanuels_filter
-          requires:
-            - libmanuels:unit-test
-            - libmanuels:web-test-e2e
-      - libmanuels-orb/build-for-electron:
-          name: libmanuels:build-for-electron
-          context: *workflow_job_default_context
-          filters: *libmanuels_filter
-          requires:
-            - libmanuels:unit-test
-            - libmanuels:web-test-e2e
-      - libmanuels-orb/silent-app-update-publish:
-          name: libmanuels:silent-app-update-publish-prod
-          aws-region: S3_PROD_PUBLISH_REGION
-          target: prod
-          context: *workflow_job_default_context
-          filters:
-            branches:
-              only:
-                - libmanuels/master
-          requires:
-            - libmanuels:build-for-browser
-      - libmanuels-orb/silent-app-update-publish:
-          name: libmanuels:silent-app-update-publish-staging
-          aws-region: S3_STAGING_PUBLISH_REGION
-          target: staging
-          context: *workflow_job_default_context
-          filters:
-            branches:
-              only:
-                - /capgo\/.*/
-          requires:
-            - libmanuels:build-for-browser
-      - libmanuels-orb/android-debug-build:
-          name: libmanuels:android-debug-build
-          context: *workflow_job_default_context
-          filters: *libmanuels_filter
-          requires:
-            - libmanuels:build-for-browser
-      - libmanuels-orb/android-publish:
-          name: libmanuels:android-publish
-          context: *workflow_job_default_context
-          filters: *libmanuels_publish_filter
-          requires:
-            - libmanuels:build-for-browser
-      - libmanuels-orb/windows:
-          name: libmanuels:windows
-          context: *workflow_job_default_context
-          filters: *libmanuels_publish_filter
-          requires:
-            - libmanuels:build-for-electron
-      - libmanuels-orb/macos:
-          name: libmanuels:macos
-          context: *workflow_job_default_context
-          filters: *libmanuels_publish_filter
-          requires:
-            - libmanuels:build-for-electron
-      - libmanuels-orb/ios-build:
-          name: libmanuels:ios-build
-          context: *workflow_job_default_context
-          filters: *libmanuels_filter
-          requires:
-            - libmanuels:build-for-browser
-      - libmanuels-orb/ios-publish:
-          name: libmanuels:ios-publish
-          context: *workflow_job_default_context
-          filters: *libmanuels_publish_filter
-          requires:
-            - libmanuels:ios-build
-      - libmanuels-orb/web-test-e2e:
-          name: libmanuels:web-test-e2e
-          context: *workflow_job_default_context
-          filters: *libmanuels_filter
-      - libmanuels-orb/update-s3-binary-download-link-files:
-          name: libmanuels:update-s3-binary-download-link-files
-          context: *workflow_job_default_context
-          filters:
-            branches:
-              only:
-                - libmanuels/master
-          requires:
-            - libmanuels:windows
-            - libmanuels:macos
-  sdk:
-    jobs:
-      - sdk-orb/lint-test-and-build:
-          name: sdk:lint-test-and-build
-          context: *workflow_job_default_context
-          filters: *libmanuels_filter
-
 orbs:
-  codecov: codecov/codecov@3.2.4
-  libmanuels-orb:
-    orbs:
-      cypress: cypress-io/cypress@3.1.3
-      node: circleci/node@6.3.0
-      browser-tools: circleci/browser-tools@1.4.7
-      codecov: codecov/codecov@3.2.2
-      android: circleci/android@2.3.0
-      ruby: circleci/ruby@2.1.0
-      gradle: circleci/gradle@3.0.0
-      aws-cli: circleci/aws-cli@5.1.0
-    commands:
-      checkout-and-attach-workspace:
-        description: Checkout Project and Attach Workspace
-        steps:
-          - checkout:
-              path: *workspace_root
-          - *attach_workspace
-      set-env-bash:
-        description: Set version related env vars
-        steps:
-          - run:
-              name: Set version related env vars
-              command: npm run make:ci:env-vars -w @edulib/libmanuels
-      setup-github-npm-registry:
-        description: Setup Github NPM registry
-        steps:
-          - run:
-              command: echo "//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}" > ~/.npmrc
-      install-node-pkgs:
-        description: Use node orb to install deps
-        steps:
-          - setup-github-npm-registry
-          - node/install-packages:
-              app-dir: *workspace_root
-              include-branch-in-cache-key: false
-              cache-path: ~/project/node_modules
-              cache-version: v5
-              override-ci-command: npm i
-      install-node-deps:
-        description: Installs Node dependencies using cache
-        parameters:
-          use_cache:
-            type: boolean
-            default: true
-        steps:
-          - setup-github-npm-registry
-          - when:
-              condition: << parameters.use_cache >>
-              steps:
-                - restore_cache:
-                    name: Restore Node Package Cache
-                    keys:
-                      - *win_node_cache_key
-          - run:
-              name: Install Local Node Dependencies
-              command: npm i
-              no_output_timeout: 30m
-          - when:
-              condition: << parameters.use_cache >>
-              steps:
-                - save_cache:
-                    name: Save Node Package Cache
-                    key: *win_node_cache_key
-                    paths:
-                      - ./node_modules
-      tag-electron-builder-version-channel:
-        description: Tags Electron Builder Release channel by updating package.json
-        steps:
-          - run:
-              name: Tag Electron Release Channel
-              command: npm run make:ci:tag-electron-release-channel -w @edulib/libmanuels
-      install-ios-bundler-deps:
-        description: Installs iOS bundler dependencies
-        steps:
-          - ruby/install-deps:
-              app-dir: "apps/libmanuels/ios/App"
-      run-on-android-env:
-        description: Setup android env
-        parameters:
-          steps:
-            type: steps
-        steps:
-          - checkout-and-attach-workspace
-          - install-node-pkgs
-          - run: sudo gem install bundler -v 2.4.20
-          - ruby/install-deps
-          - gradle/with_cache:
-              steps: << parameters.steps >>
-          - store_artifacts:
-              path: ./app/build/outputs
-      run-on-ios-env:
-        description: Setup ios env
-        parameters:
-          steps:
-            type: steps
-        steps:
-          - checkout-and-attach-workspace
-          - set-env-bash
-          - install-node-pkgs
-          - install-ios-bundler-deps
-          - steps: << parameters.steps >>
-      update-s3-binary-download-link-files:
-        description: Update s3 binary download link files
-        parameters:
-          platform:
-            type: string
-            default: "-a"
-        steps:
-          - aws-cli/setup:
-              profile_name: edulib
-              region: ${S3_PROD_PUBLISH_REGION}
-              aws_access_key_id: AWS_ACCESS_KEY_ID
-              aws_secret_access_key: AWS_SECRET_ACCESS_KEY
-          - run:
-              name: Update s3 download app link
-              working_directory: ~/project/apps/libmanuels
-              command: |
-                if [[ "${CIRCLE_BRANCH}" == "libmanuels/master" ]]; then
-                  npm run update-s3-binary-download-link-files -- << parameters.platform >>
-                else
-                  echo "NOT updating s3 download link"
-                fi
-    jobs:
-      lint-code:
-        working_directory: *workspace_root
-        docker: *default_node_docker_image
-        resource_class: medium+
-        steps:
-          - checkout-and-attach-workspace
-          - install-node-pkgs
-          - run:
-              name: Lint Code
-              command: npm run lint -w @edulib/libmanuels
-      unit-test:
-        working_directory: *workspace_root
-        docker: *default_node_docker_image
-        resource_class: medium+
-        steps:
-          - checkout-and-attach-workspace
-          - install-node-pkgs
-          - run:
-              name: Run Tests
-              command: npm run test:coverage -w @edulib/libmanuels -- --reporters=default --reporters=jest-junit
-              environment:
-                JEST_JUNIT_OUTPUT_DIR: ./reports/junit/
-          - store_test_results:
-              path: ./apps/libmanuels/reports/junit/
-          - codecov/upload
-      web-test-e2e:
-        docker:
-          - image: cimg/node:22.11-browsers
-        resource_class: medium+
-        steps:
-          - checkout-and-attach-workspace
-          - setup-github-npm-registry
-          - browser-tools/install-chrome
-          - browser-tools/install-chromedriver
-          - cypress/install
-          - cypress/run-tests:
-              start-command: npm run start:instrumented -w @edulib/libmanuels
-              cypress-command: npx wait-on@latest http://localhost:3000 && npm run test:cypress -w @edulib/libmanuels -- --reporter junit --reporter-options "mochaFile=cypress/results/output-[hash].xml,toConsole=true"
-          - store_test_results:
-              path: apps/libmanuels/cypress/results
-          - store_artifacts:
-              path: apps/libmanuels/cypress/screenshots
-          - codecov/upload
-      build-for-browser:
-        <<: *macos_env_default
-        steps:
-          - checkout-and-attach-workspace
-          - install-node-pkgs
-          - run:
-              name: Build React app
-              command: npm run build:browser:auto-env -w @edulib/libmanuels
-              no_output_timeout: 20m
-          - install-ios-bundler-deps
-          - run:
-              name: Ionic capacitor sync
-              command: |
-                if [[ "${CIRCLE_BRANCH}" == "libmanuels/master" ]]; then
-                  npm run build:ionic:prod:cap:sync -w @edulib/libmanuels
-                else
-                  npm run build:ionic:staging:cap:sync -w @edulib/libmanuels
-                fi
-          - set-env-bash
-          - run:
-              name: Create Sentry Release with source maps
-              command: npm run make:ci:sentry-release -w @edulib/libmanuels
-          - persist_to_workspace:
-              root: ~/project
-              paths:
-                - apps/libmanuels/build/*
-                - apps/libmanuels/ios/*
-                - apps/libmanuels/android/*
-      build-for-electron:
-        working_directory: *workspace_root
-        docker: *default_node_docker_image
-        resource_class: medium+
-        steps:
-          - checkout-and-attach-workspace
-          - install-node-pkgs
-          - run:
-              name: Build React app and sync electron
-              command: npm run build:electron:auto-env -w @edulib/libmanuels
-              no_output_timeout: 20m
-          - persist_to_workspace:
-              root: *workspace_root
-              paths:
-                - apps/libmanuels/electron
-          - set-env-bash
-          - run:
-              name: Create Sentry Release with source maps
-              command: npm run make:ci:sentry-release -w @edulib/libmanuels
-      silent-app-update-publish:
-        working_directory: *workspace_root
-        docker: *default_node_docker_image
-        resource_class: medium+
-        parameters:
-          aws-region:
-            type: env_var_name
-          target:
-            type: string
-        steps:
-          - checkout-and-attach-workspace
-          - install-node-pkgs
-          - aws-cli/setup:
-              profile_name: edulib
-              region: "<< parameters.aws-region >>"
-              aws_access_key_id: AWS_ACCESS_KEY_ID
-              aws_secret_access_key: AWS_SECRET_ACCESS_KEY
-          - run:
-              name: Zip and upload bundle
-              command: npm run -w @edulib/libmanuels capgo:upload -- -t "<< parameters.target >>"
-      android-debug-build:
-        <<: *android_env_default
-        steps:
-          - run-on-android-env:
-              steps:
-                - run:
-                    name: Build debug aab
-                    command: bundle exec fastlane build_debug
-      android-publish:
-        <<: *android_env_default
-        steps:
-          - run-on-android-env:
-              steps:
-                - run:
-                    name: Publish apk to Play Store or Firebase App Distribution
-                    command: |
-                      if [[ "${CIRCLE_BRANCH}" == "libmanuels/master" ]]; then
-                        bundle exec fastlane publish_app
-                      elif [[ "${CIRCLE_BRANCH}" == libmanuels/rc/* ]]; then
-                        bundle exec fastlane rc_deploy 
-                      fi
-                - run:
-                    name: Build and upload apk to AppCenter
-                    command: |
-                      if [[ "${CIRCLE_BRANCH}" == "libmanuels/master" ]]; then
-                        target='prod'
-                      elif [[ "${CIRCLE_BRANCH}" == libmanuels/rc/* ]]; then
-                        target='preprod'
-                      fi
-                      bundle exec fastlane release_apk_to_app_center target:$target
-      ios-build:
-        <<: *macos_env_default
-        steps:
-          - run-on-ios-env:
-              steps:
-                - run:
-                    name: Fastlane
-                    command: npm run make:ios:fastlane-build-debug -w @edulib/libmanuels
-                - persist_to_workspace:
-                    root: *workspace_root
-                    paths:
-                      - apps/libmanuels/ios
-      ios-publish:
-        <<: *macos_env_default
-        steps:
-          - run-on-ios-env:
-              steps:
-                - add_ssh_keys:
-                    fingerprints:
-                      - SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8
-                - run:
-                    name: Fastlane
-                    command: npm run make:ios:fastlane-build -w @edulib/libmanuels
-                - run:
-                    name: Upload to TestFlight
-                    command: npm run make:ci:testflight:upload-ios -w @edulib/libmanuels
-                - store_artifacts:
-                    path: output
-      windows:
-        machine: true
-        resource_class: edulib-france/libmanuels-win-sign
-        steps:
-          - run:
-              name: clean up workspace before build
-              command: rm -rf ~/project/**
-          - checkout-and-attach-workspace
-          - run:
-              name: Tag Electron Release Channel
-              <<: *electron_working_directory
-              command: |
-                if [[ "${CIRCLE_BRANCH}" == libmanuels/rc/* ]]; then
-                  sed -ie '/version/s/",$/'"-rc\"\,/" package.json
-                elif [[ "${CIRCLE_BRANCH}" != "libmanuels/master" ]]; then
-                  sed -ie '/version/s/",$/'"-develop\"\,/" package.json
-                fi
-          - run:
-              <<: *electron_working_directory
-              command: npm install
-          - run:
-              name: Package app
-              <<: *electron_working_directory
-              command: |
-                if [[ "${CIRCLE_BRANCH}" == "libmanuels/master" ]]; then
-                  echo "Packaging for production"
-                  echo "export S3_PUBLISH_REGION=$S3_PROD_PUBLISH_REGION" >> "$BASH_ENV"
-                  echo "export S3_PUBLISH_BUCKET=$S3_PROD_PUBLISH_BUCKET" >> "$BASH_ENV"
-                  echo "export PUBLISH_FOR_PULL_REQUEST=true" >> "$BASH_ENV"
-                  npm run pack:win:dist
-                else
-                  echo "Packaging for staging"
-                  npm run pack:win
-                fi
-          - run:
-              name: Archive the files
-              <<: *electron_working_directory
-              shell: powershell.exe
-              command: Compress-Archive -Force -Path .\dist\*.exe -DestinationPath .\dist\LibManuels.zip
-          - store_artifacts:
-              path: apps/libmanuels/electron/dist/
-          - run:
-              name: Upload binaries to AppCenter
-              <<: *electron_working_directory
-              command: |
-                buildVersion=`node -e "console.log(require('./package.json').version);"`
-                zipFile=dist/LibManuels-$buildVersion.zip
-                cp dist/LibManuels.zip $zipFile
+  pulumi: pulumi/pulumi@2.1.0
+  node: circleci/node@5.1.0
 
-                distributionGroupName='Develop'
-                if [[ "${CIRCLE_BRANCH}" == libmanuels/master ]]; then
-                  distributionGroupName='Master'
-                elif [[ "${CIRCLE_BRANCH}" == libmanuels/rc/* ]]; then
-                  distributionGroupName='Master-staging'
-                fi
-                npx appcenter distribute release -f $zipFile -g $distributionGroupName --app edulib/libmanuels-react-windows --build-version $buildVersion --token ${APPCENTER_TOKEN}
-      update-s3-binary-download-link-files:
-        working_directory: *workspace_root
-        docker: *default_node_docker_image
-        steps:
-          - checkout-and-attach-workspace
-          - update-s3-binary-download-link-files:
-              platform: "-a"
-      macos:
-        <<: *macos_env_default
-        steps:
-          - run:
-              name: Setup Github NPM registry
-              command: echo "//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}" > ~/.npmrc
-          - checkout-and-attach-workspace
-          - install-node-pkgs
-          - set-env-bash
-          - run:
-              name: Copy Apple AuthKey file to lookup location
-              command: npm run make:ci:mac:setup-certificate -w @edulib/libmanuels
-          - tag-electron-builder-version-channel
-          - run:
-              name: Set Electron Publish Environment Variables
-              command: npm run make:ci:set-electron-publish-mac-env-vars -w @edulib/libmanuels
-          - run:
-              name: Package app
-              command: npm run make:ci:mac:pack:publish -w @edulib/libmanuels
-              no_output_timeout: 30m
-          - store_artifacts:
-              path: apps/libmanuels/electron/dist/
-          - run:
-              name: Upload binaries to AppCenter
-              command: npm run make:ci:appcenter:upload-mac -w @edulib/libmanuels
-  sdk-orb:
-    orbs:
-      aws-cli: circleci/aws-cli@5.1.0
-      codecov: codecov/codecov@3.2.2
-    commands:
-      checkout-and-attach-workspace:
-        description: Checkout Project and Attach Workspace
-        steps:
-          - checkout
-          - attach_workspace:
-              at: ~/project
-      install-node-deps:
-        description: Installs Node dependencies using cache
-        parameters:
-          cache_key:
-            type: string
-            default: ""
-        steps:
-          - run:
-              name: Setup Github NPM registry
-              command: echo "//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}" > ~/.npmrc
-          - restore_cache:
-              name: Restore Node Package Cache
-              keys:
-                - >-
-                  node_modules-{{ checksum "package-lock.json" }}-<<
-                  parameters.cache_key >>
-          - run:
-              name: Install Local Node Dependencies
-              command: npm ci
-          - save_cache:
-              name: Save Node Package Cache
-              key: >-
-                node_modules-{{ checksum "package-lock.json" }}-<<
-                parameters.cache_key >>
-              paths:
-                - ./node_modules
-                - ./*/node_modules
-                - ~/.npm
-      lint-and-test:
-        description: Lint Code & Run Tests
-        steps:
-          - run:
-              name: Lint Code
-              command: npm run lint -w @edulib/sdk
-          - run:
-              name: Run Tests
-              command: npm run test:coverage -w @edulib/sdk
-              environment:
-                JEST_JUNIT_OUTPUT_DIR: ./reports/junit/
-          - store_test_results:
-              path: ./apps/sdk/reports/junit/
-          - codecov/upload
+aliases:
+  image: &image
+    docker:
+      - image: cimg/node:18.20
+  context: &context
+    context: Libmanuels
+
+commands:
+  setup:
+    steps:
+      - checkout
+      - node/install-packages
+      - pulumi/login
+
+jobs:
+  preview-staging-job:
+    <<: *image
+    steps:
+      - setup
+      - pulumi/preview:
+          stack: edulib-france/dev
+  preview-production-job:
+    <<: *image
+    steps:
+      - setup
+      - pulumi/preview:
+          stack: edulib-france/prod
+  deploy-staging-job:
+    <<: *image
+    steps:
+      - setup
+      - pulumi/update:
+          stack: edulib-france/dev
+  deploy-production-job:
+    <<: *image
+    steps:
+      - setup
+      - pulumi/update:
+          stack: edulib-france/prod
+
+workflows:
+  dev-preview:
     jobs:
-      lint-test-and-build:
-        working_directory: ~/project
-        parameters:
-          do_npm_install:
-            type: boolean
-            default: true
-          major-branch:
-            type: string
-            default: |-
-              [[
-                    "${CIRCLE_BRANCH}" == "libmanuels/master"
-                ||  "${CIRCLE_BRANCH}" == develop
-                ||  "${CIRCLE_BRANCH}" == libmanuels/preview/*
-                ||  "${CIRCLE_BRANCH}" == libmanuels/preview/*
-                ||  "${CIRCLE_BRANCH}" == libmanuels/rc*
-                ||  "${CIRCLE_BRANCH}" == sdk/master
-              ]]
-        docker: *default_node_docker_image
-        steps:
-          - checkout-and-attach-workspace
-          - when:
-              condition: << parameters.do_npm_install >>
-              steps:
-                - install-node-deps:
-                    cache_key: lint-and-test
-          - lint-and-test
-          - run:
-              name: Build Production SDK
-              command: npm run build:prod -w @edulib/sdk
-          - aws-cli/setup:
-              profile_name: default
-              region: ${S3_STAGING_PUBLISH_REGION}
-              aws_access_key_id: AWS_ACCESS_KEY_ID
-              aws_secret_access_key: AWS_SECRET_ACCESS_KEY
-          - run:
-              name: Copy SDK release files to CDN
-              command: |
-                if <<parameters.major-branch>>; then
-                  ./apps/sdk/scripts/copy_to_cdn.sh
-                fi
-          - run:
-              name: Generate documentation
-              command: npm run build:doc -w @edulib/sdk
-          - run:
-              name: Copy SDK documentation to S3
-              command: |
-                if <<parameters.major-branch>>; then
-                  ./apps/sdk/scripts/copy_docs_to_s3.sh
-                fi
+      - preview-staging-job:
+          <<: *context
+          filters:
+            branches:
+              ignore:
+                - main
+                - develop
+  deploy-staging:
+    jobs:
+      - deploy-staging-job:
+          <<: *context
+          filters:
+            branches:
+              only: develop
+      - preview-production-job:
+          <<: *context
+          filters:
+            branches:
+              only: develop
+  deploy-production:
+    jobs:
+      - deploy-production-job:
+          <<: *context
+          filters:
+            branches:
+              only: main
