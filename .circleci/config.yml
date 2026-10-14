@@ -6,7 +6,7 @@ orbs:
 alias:
   - image: &image
       docker:
-        - image: "cimg/node:18.20"
+        - image: "cimg/node:24.22"
   - context: &context
       context: Libmanuels
 
